@@ -1,38 +1,55 @@
 # MQTT
 
-Command/state bus for this project. Broker lives on the user's LAN; the ESP32 connects as a client using [[Libraries|PubSubClient]] over plain TCP on port 1883 — no TLS, no auth.
+Command/state bus for this project. Broker lives on the user's LAN; the ESP32
+connects as a client using [[Libraries|PubSubClient]] over plain TCP. As of the
+2026-07-03 refactor the light speaks Home Assistant's **JSON light schema** — one
+command topic and one state topic carrying JSON, instead of the old eight separate
+topics. See [[MQTT Topics]].
 
-## Configuration (in `main.cpp`)
-- Broker IP: `mqtt_server` (currently `192.168.100.250`; was `192.168.100.76` on `main` — the working-tree diff shows the user has moved brokers).
-- Port: `1883` (hard-coded in `setup()` via `client.setServer(mqtt_server, 1883)`).
-- Client id: `"Hannah Fairy Lights"` — hard-coded in `reconnect()`. See gotcha below.
-- No username/password; the broker is trusted-LAN-only.
+## Configuration (from [[Secrets]], via `main.cpp`)
+- Broker: `MQTT_SERVER` / `MQTT_PORT` (defaults to `1883`).
+- **Auth**: `client.connect(DEVICE_SLUG, MQTT_USER, MQTT_PASS, willTopic, 0, true, "offline")`.
+  Empty `MQTT_USER` → `nullptr` → anonymous. Credentials live in [[Secrets]].
+- Client id: `DEVICE_SLUG` (per-unit, no longer the shared `"Hannah Fairy Lights"`).
+- Buffer: `client.setBufferSize(1024)` so the ~700-byte discovery JSON fits — this
+  retired the old [[Payload size gotcha]] workaround.
+- Keepalive: `client.setKeepAlive(60)`.
 
-Topic tree lives in [[MQTT Topics]]. The initial HA teach-in is a separate manual step — see [[Home Assistant Discovery]].
+## Connection lifecycle (non-blocking)
+1. WiFi comes up in `setup()` (bounded 10 s wait, then proceeds) — see [[WiFi Config]].
+2. `client.setServer/​setBufferSize/​setKeepAlive/​setCallback(onCommand)` in `setup()`.
+   MQTT is **not** connected in `setup()` — the strand animates immediately.
+3. In `loop()`, `ensureConnected()` runs every iteration: if WiFi or MQTT is down it
+   retries **at most once per 5 s** and returns fast, so `effectLoop()` never blocks.
+   Then `client.loop()` drives keepalives + inbound dispatch.
+4. On every successful (re)connect, `onMqttConnected()` **re-subscribes** to the
+   command topic, publishes `"online"` availability, re-publishes discovery, and
+   publishes current state.
 
-## Connection lifecycle
-1. WiFi comes up in `setup()` — see [[WiFi Config]].
-2. `client.setServer(mqtt_server, 1883)`.
-3. `reconnect()` loops with `delay(1000)` until `client.connect(clientId)` returns true. Blocking — nothing else runs meanwhile.
-4. `init_mqtt()` subscribes to the four command topics, immediately publishes current state on the four status topics, and registers `onCommand` as the callback.
-5. Main `loop()` re-invokes `reconnect()` if the client drops, then calls `client.loop()` every iteration to drive keepalives + inbound message dispatch.
+## The freeze fix (why this was rewritten)
+The old `reconnect()` was a blocking `while (!connected) { delay(1000); }` with **no
+WiFi recovery**. When WiFi dropped after ~half a day, MQTT could never reconnect, so
+the loop spun forever — animation frozen, commands ignored. It also never
+re-subscribed after a reconnect. The rewrite makes connection management non-blocking,
+adds WiFi auto-reconnect, re-subscribes on every connect, and adds a [[Watchdog]]
+reboot backstop. See [[plans/2026-07-03-mqtt-discovery-refactor]].
 
-## Gotchas
-- **PubSubClient's default max packet size is small** (256 bytes in stock versions). That's why HA discovery is published from a shell script, not the ESP32. See [[Payload size gotcha]].
-- **Shared `clientId` across units** — if you ever run two boards on one broker, one will kick the other off in a loop. Change the string per unit.
-- **Blocking reconnect at boot** — the strand won't animate until MQTT connects. If the broker is unreachable, the light appears bricked; check serial output.
-- No last-will / retained-state — status topics are published only when the device is online. HA will show the entity as `unknown` until the ESP32 reconnects.
+## Availability / Last Will
+- Retained LWT publishes `"offline"` to `home/light/<slug>/status` if the device
+  drops; `"online"` is published on connect. HA shows the entity unavailable instead
+  of stale. Wired into discovery as `availability_topic`.
 
 ## Live smoke-test commands
-Requires [`mqtt-cli`](https://www.npmjs.com/package/mqtt-cli) (used by `publish_discovery.sh` too).
+Requires [`mqtt-cli`](https://www.npmjs.com/package/mqtt-cli).
 
 ```bash
-mqtt sub -h 192.168.100.250 -t 'home/light/#' -v          # watch traffic
-mqtt pub -h 192.168.100.250 -t home/light/bedroom_fairy/effect/set -m 'rainbow'
-mqtt pub -h 192.168.100.250 -t home/light/bedroom_fairy/power/set   -m 'OFF'
+mqtt sub -h <broker-ip> -t 'home/light/#' -v
+mqtt pub -h <broker-ip> -t home/light/<slug>/set -m '{"state":"ON","effect":"rainbow"}'
+mqtt pub -h <broker-ip> -t home/light/<slug>/set -m '{"state":"OFF"}'
 ```
 
-Publishing to a `.../set` topic will change the strand's state — coordinate with anyone using the light. See the "Actions that touch hardware or shared systems" note in the [[build]] skill.
+Publishing to `.../set` changes the strand's state — coordinate with anyone using the
+light (see the [[build]] skill's hardware-actions note).
 
 ## Related
-- [[MQTT Topics]] · [[Home Assistant Discovery]] · [[WiFi Config]] · [[Payload size gotcha]] · [[main.cpp]]
+- [[MQTT Topics]] · [[Home Assistant Discovery]] · [[Secrets]] · [[WiFi Config]] · [[Watchdog]] · [[Libraries]] · [[main.cpp]]

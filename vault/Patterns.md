@@ -8,7 +8,13 @@ The full list is baked into the `effect_list` field of the [[Home Assistant Disc
 static, rainbow, fireflies, aurora, auroraSettable, torchlight
 ```
 
-`auroraSettable` is exposed to HA but does not currently work — see [[RGB to Hue gotcha]].
+All six effects work as of 2026-07-03 (`auroraSettable` was fixed — see [[RGB to Hue gotcha]]).
+
+Each time-based effect derives its phase clock as `millis() % <period_ms>` where the
+period is a close integer approximation of that effect's fundamental animation period.
+This keeps the float phase small forever (no long-uptime precision loss — the old
+`MAXVAL` rollover trick is gone) while wrapping seamlessly, since every sine/cosine
+term's frequency is an integer multiple of the base.
 
 ## Working effects
 
@@ -30,19 +36,17 @@ Hard-coded slow oscillation between hue `150` and `220` (green→blue). Per-pixe
 ### `torchlight`
 Same maths as `aurora`, hue range `18`–`39` (orange→amber). Time base `t/3000.0`.
 
-## Broken effect
-
 ### `auroraSettable`
-Meant to be a colour-tunable aurora. Two known problems in the current code (see [[RGB to Hue gotcha]] for details):
-1. A shadow variable: the loop body declares `float hue = auroraHue(...)` **and** reads `int hue = ...` from the outer scope. C++ scoping means the outer `hue` global is what feeds `startingHue`, but that global is only ever computed once at file scope from `getHue(r,g,b)` — the MQTT `rgb/set` callback updates `r`/`g`/`b` but never recomputes `hue`.
-2. `endingHue = hue + deltaHue % 360` doesn't wrap what the author probably intended (`%` binds tighter than `+`), so it's really `hue + (deltaHue % 360) = hue + 70`, which can exceed 360.
-
-Both are fixable in a few lines — treat as an open task.
+Colour-tunable aurora: a calm ~80° band centered on the current color's hue (`hue` to
+`hue + 70`). Now settable — the `color` command recomputes `hue`. The tight `hue + 70`
+delta is a **deliberately preserved happy accident** (the "corrected" wrapped version
+looked garish); see [[RGB to Hue gotcha]]. Do not "fix" the precedence.
 
 ## Shared globals used by every effect
-- `power` (`"on"`/`"OFF"`) — `OFF` skips the effect and fills black.
+- `isOn` (bool) — `false` skips the effect and fills black. (Replaced the old
+  `power` string, killing the `OFF` vs `off` case foot-gun.)
 - `brightness` (0–255) — global scale.
-- `r`, `g`, `b` — used by `static` and (indirectly, via `hue`) by `auroraSettable`.
+- `r`, `g`, `b` — used by `static` and (via `hue`) by `auroraSettable`.
 - `randomPhases[100]` — baked at build time by the JS one-liner in the comment above the array.
 
 ## Related

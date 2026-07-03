@@ -1,20 +1,26 @@
 # Payload size gotcha
 
-Why [[Home Assistant Discovery]] is a shell script instead of a `client.publish()` call inside [[main.cpp]].
+**Resolved (2026-07-03).** This used to be why [[Home Assistant Discovery]] was a
+shell script instead of a `client.publish()` in [[main.cpp]].
 
-## The constraint
-- [[Libraries|PubSubClient]]'s default `MQTT_MAX_PACKET_SIZE` is **256 bytes** — inclusive of the fixed header, topic string, and payload. Anything larger silently fails: `client.publish()` returns `false`, the broker never sees the message.
-- The HA MQTT-light discovery payload for this device (see the JSON in `src/publish_discovery.sh`) is **~900 bytes** of JSON, plus the `homeassistant/light/bedroom_fairy/config` topic string. Nowhere close to fitting in 256.
+## The old constraint
+- [[Libraries|PubSubClient]]'s default `MQTT_MAX_PACKET_SIZE` is **256 bytes**
+  (header + topic + payload). Anything larger silently fails — `publish()` returns
+  `false` and the broker never sees it.
+- The HA discovery payload is ~700 bytes, far over 256, so it couldn't be sent from
+  the device.
 
-## Two fixes if we ever want to publish from-device
-1. **Bump the buffer at runtime**: `client.setBufferSize(1024)` (available since PubSubClient v2.7 — we're on the git tip, so it's there). Costs ~800 extra bytes of RAM; on ESP32 that's fine. Publish discovery once from `setup()`, then reset the buffer if desired.
-2. **Switch to HA's [JSON schema light](https://www.home-assistant.io/integrations/light.mqtt/#json-schema)** — one `command_topic` receiving a single JSON object instead of the four separate `_command_topic`s used today. Shrinks the discovery payload roughly in half **and** halves the number of topic subscriptions in [[main.cpp]]. Bigger refactor but a cleaner endpoint.
+## The fix that was applied
+`client.setBufferSize(1024)` in `setup()`. The device now publishes its own retained
+discovery from `publishDiscovery()` (and the JSON state payloads) directly — the
+out-of-band `publish_discovery.sh` was deleted. Combined with the move to HA's JSON
+light schema (one command/state topic, see [[MQTT Topics]]), payload sizes stay well
+under the buffer.
 
-Either fix would obsolete `src/publish_discovery.sh` and simplify install-per-unit setup (see [[MQTT Topics]] renaming pain).
-
-## Status
-- Neither fix applied yet — the current install flow still relies on the shell script.
-- No urgency: the script works and only runs once per unit.
+## If you add more discovery fields
+Keep an eye on the total: the buffer must exceed `fixed header + topic + JSON`. Bump
+`setBufferSize()` further if you add a large `device` block, more effects, etc. It
+costs ~800 bytes of RAM per the current setting — trivial on ESP32.
 
 ## Related
 - [[Home Assistant Discovery]] · [[Libraries]] · [[MQTT]] · [[MQTT Topics]]

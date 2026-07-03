@@ -1,32 +1,47 @@
 # MQTT Topics
 
-The command/state topic tree used by this device. All topics share the prefix `home/light/<name>/` where `<name>` is the per-unit slug (currently the literal placeholder `CHANGEME` in [[main.cpp]], and `bedroom_fairy` in `publish_discovery.sh`).
+The command/state topic tree. As of 2026-07-03 this uses Home Assistant's **JSON
+light schema**: a single command topic and a single state topic carrying JSON,
+plus an availability topic. All derive from one `DEVICE_SLUG` in [[Secrets]] —
+`home/light/<slug>/…`. (Was: four `_command` + four `_status` topics with hand-rolled
+string parsing.)
 
 ## Layout
 
-| Direction | Topic | Payload | Notes |
-|---|---|---|---|
-| ← in | `home/light/<name>/power/set` | `on` / `OFF` | Case matters — `effectLoop` compares `power == "OFF"` exactly. Anything non-`OFF` is treated as on. |
-| ← in | `home/light/<name>/brightness/set` | `0`–`100` (percent, as string) | Converted to 0–255 via `round(255 * pct/100)`. |
-| ← in | `home/light/<name>/rgb/set` | `"r,g,b"` (0–255 each, comma-separated) | Parsed by `indexOf`/`lastIndexOf` — no whitespace tolerance. |
-| ← in | `home/light/<name>/effect/set` | one of the [[Patterns]] names | `static`, `rainbow`, `fireflies`, `aurora`, `auroraSettable`, `torchlight`. |
-| → out | `home/light/<name>/power/status` | echo of current `power` | Published on set and on MQTT reconnect (`init_mqtt`). |
-| → out | `home/light/<name>/brightness/status` | percent (0–100) | Not raw 0–255. |
-| → out | `home/light/<name>/rgb/status` | `"r,g,b"` |
-| → out | `home/light/<name>/effect/status` | current effect name |
+| Direction | Topic | Payload |
+|---|---|---|
+| ← in | `home/light/<slug>/set` | JSON, any subset of the fields below |
+| → out | `home/light/<slug>/state` | JSON, full current state (retained) |
+| → out | `home/light/<slug>/status` | `online` / `offline` (retained LWT) |
+| discovery | `homeassistant/light/<slug>/config` | retained discovery JSON — see [[Home Assistant Discovery]] |
 
-The HA discovery config (see [[Home Assistant Discovery]]) tells HA to use these same topics, plus `brightness_scale: 100` so it publishes percentages.
+## JSON payload shape
 
-## Renaming a unit
-Every occurrence of `CHANGEME` in [[main.cpp]] must be replaced (8 topic strings) **and** the corresponding topics in `src/publish_discovery.sh` must match, **and** HA discovery `object_id` in `homeassistant/light/<object_id>/config` should be updated too, or you'll strand a duplicate device in HA. The retained discovery payload can be cleared with:
-
-```bash
-mqtt pub -h <broker-ip> -t 'homeassistant/light/<old_object_id>/config' -m '' -r
+```json
+{"state":"ON","brightness":200,"color_mode":"rgb",
+ "color":{"r":100,"g":0,"b":100},"effect":"fireflies"}
 ```
 
-## Gotchas
-- Payload parsing in `onCommand` uses `String((char*) payload).substring(0, length)`. If `payload` isn't NUL-terminated (PubSubClient does not guarantee it), the `String(char*)` constructor may read past the end before the substring trims. Works in practice for the payloads we send; be wary if you ever accept binary.
-- Case sensitivity in `power` (`OFF` vs `off`) is a foot-gun — HA usually sends uppercase by default. Verify with `mqtt sub` before troubleshooting.
+- `state`: `"ON"` / `"OFF"` (drives the `isOn` bool; case from HA is uppercase).
+- `brightness`: **0–255** (JSON-schema default scale — the old 0–100 percent
+  conversion is gone).
+- `color.{r,g,b}`: 0–255 each. Parsed with [[Libraries|ArduinoJson]]; no more manual
+  `indexOf`/`substring`. Setting color also recomputes the `hue` global (fixes the
+  old [[RGB to Hue gotcha]]).
+- `effect`: one of the [[Patterns]] names.
+
+Command messages are partial (HA sends only what changed); `onCommand` applies each
+present key then echoes full state on `.../state`.
+
+## Renaming a unit
+Change `DEVICE_SLUG` (and `DEVICE_NAME`) in [[Secrets]] — **one place**. Every topic
+and the discovery `object_id`/`unique_id` follow automatically. The device re-publishes
+its own discovery on connect, so there's no separate script to keep in sync anymore.
+To clear a stale retained entity from an old slug:
+
+```bash
+mqtt pub -h <broker-ip> -t 'homeassistant/light/<old_slug>/config' -m '' -r
+```
 
 ## Related
-- [[MQTT]] · [[main.cpp]] · [[Home Assistant Discovery]] · [[Patterns]]
+- [[MQTT]] · [[main.cpp]] · [[Home Assistant Discovery]] · [[Patterns]] · [[Secrets]] · [[RGB to Hue gotcha]]

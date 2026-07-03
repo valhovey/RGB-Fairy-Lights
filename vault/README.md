@@ -22,15 +22,19 @@ Start with [[RGB Fairy Lights]] — the top-level project page. For the chronolo
 - [[Patterns]] — the LED animation modes
 
 ## Network & integration
-- [[WiFi Config]] — SSID, effective DHCP, hard-coded credentials
-- [[MQTT]] — broker, connection, retry behavior
-- [[MQTT Topics]] — command/state topic layout
+- [[Secrets]] — gitignored `include/secrets.h`; WiFi/MQTT creds + device slug
+- [[WiFi Config]] — DHCP, auto-reconnect, non-blocking join
+- [[MQTT]] — broker, auth, non-blocking connection, availability/LWT
+- [[MQTT Topics]] — JSON light schema: single command/state topic
 - [[Home Assistant]] — how HA fits in
-- [[Home Assistant Discovery]] — `publish_discovery.sh`, retained config payload
+- [[Home Assistant Discovery]] — in-firmware retained config (no more shell script)
 
-## Known issues / gotchas
-- [[Payload size gotcha]] — PubSubClient's 256-byte default buffer forces `publish_discovery.sh`
-- [[RGB to Hue gotcha]] — why `auroraSettable` doesn't respond to color changes
+## Reliability
+- [[Watchdog]] — esp_task_wdt reboot backstop if the loop stalls
+
+## Resolved gotchas (kept for reference)
+- [[Payload size gotcha]] — fixed via `setBufferSize(1024)` + in-firmware discovery
+- [[RGB to Hue gotcha]] — `auroraSettable` fixed; hue recomputed on color change
 
 ## Stubs (linked but not yet written)
 - (none — expand as new concepts get mentioned)

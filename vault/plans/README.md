@@ -10,4 +10,4 @@ See the [[build]] skill's "Persisting plans into the vault" section for the full
 
 ## Entries
 
-- (none yet)
+- 2026-07-03 — [MQTT/HA discovery refactor, MQTT auth, freeze fix](2026-07-03-mqtt-discovery-refactor.md) — in-progress

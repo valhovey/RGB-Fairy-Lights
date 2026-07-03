@@ -1,22 +1,29 @@
 # Libraries
 
-Runtime dependencies declared in `platformio.ini` under `lib_deps` for both envs:
+Runtime dependencies declared in `platformio.ini` under `lib_deps` for both envs
+(as of 2026-07-03):
 
 | Library | Source | Purpose |
 |---|---|---|
-| `Adafruit_NeoPixel` | `git@github.com:adafruit/Adafruit_NeoPixel.git` (SSH) | Driving the [[Neopixel Fairy Lights]] strand. Used everywhere in `effectLoop`. |
-| `Adafruit_PCT2075` | `https://github.com/adafruit/Adafruit_PCT2075.git` | Temperature sensor driver. **Not actually used in the current firmware** — no `#include` of it. Leftover from an earlier iteration or copy-paste from an Adafruit example. Safe to drop from `lib_deps` if trimming build time. |
-| `Adafruit_BusIO` | `https://github.com/adafruit/Adafruit_BusIO.git` | Transitive dep of the PCT2075 driver. Same story — not needed once PCT2075 is dropped. |
-| `PubSubClient` | `https://github.com/knolleary/pubsubclient.git` | MQTT client. Trips over the [[Payload size gotcha]] — max packet is small by default. |
-| `SPI` | (Arduino core) | Same story as `Wire`: only needed by the unused BusIO chain. |
-| `Wire` | (Arduino core) | I2C. Only needed by BusIO/PCT2075. |
+| `Adafruit_NeoPixel` | `git@github.com:adafruit/Adafruit_NeoPixel.git` (SSH) | Drives the [[Neopixel Fairy Lights]] strand. Used throughout `effectLoop`. Note `NEO_RGB` byte order. |
+| `PubSubClient` | `https://github.com/knolleary/pubsubclient.git` | MQTT client — see [[MQTT]]. Buffer bumped to 1024 in-code (retired the [[Payload size gotcha]]). |
+| `ArduinoJson` | `bblanchon/ArduinoJson@^7` (PlatformIO registry) | Builds/parses the HA JSON discovery + command/state payloads — see [[MQTT Topics]] and [[Home Assistant Discovery]]. Added in the 2026-07-03 refactor. |
+
+## Dropped in the refactor
+`Adafruit_PCT2075`, `Adafruit_BusIO`, `SPI`, and `Wire` were removed from `lib_deps`
+— none were ever `#include`d ([[main.cpp]] has no I2C/temperature code). Smaller flash,
+faster builds. Re-add them together only if a temperature-driven effect is ever added.
+
+## ArduinoJson v7 notes
+- `JsonDocument doc;` is elastic (no capacity template). Arrays via
+  `doc["k"].to<JsonArray>()`, nested objects via `.to<JsonObject>()`.
+- `deserializeJson(doc, payload, length)` parses the raw MQTT bytes directly.
+- The `doc["k"] | fallback` operator is used to default missing color channels.
 
 ## Framework
-- `framework = arduino`
-- `platform = espressif32` (both envs) — see [[QT Py ESP32]] / [[QT Py ESP32-S3]] for the specific board packages that get pulled in.
-
-## Trim opportunity
-`Adafruit_PCT2075`, `Adafruit_BusIO`, `SPI`, and `Wire` can all be removed together — none of them are referenced from [[main.cpp]]. Keep them if you plan to add temperature-based effects; drop them for smaller flash and faster builds otherwise.
+- `framework = arduino`, `platform = espressif32` (both envs). Board packages: see
+  [[QT Py ESP32]] / [[QT Py ESP32-S3]]. The `esp_task_wdt` [[Watchdog]] is part of the
+  ESP32 core (no extra dep).
 
 ## Related
-- [[main.cpp]] · [[PlatformIO]] · [[Payload size gotcha]]
+- [[main.cpp]] · [[PlatformIO]] · [[MQTT]] · [[Payload size gotcha]] · [[Home Assistant Discovery]]
