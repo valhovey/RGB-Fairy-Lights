@@ -72,7 +72,8 @@ If you change anything in the vault during a turn, tell the user briefly at the 
 
 - Generic ESP32 / Arduino / Home Assistant / MQTT documentation that any web search would give. The vault is about *this project*.
 - Transcripts of conversations or task progress. That belongs in the chat, not the vault.
-- Secrets: WiFi passwords, MQTT broker credentials, HA long-lived tokens, private IPs the user has asked to keep off-repo. If a secret must be referenced, refer to it by name/location (`WIFI_PASS in main.cpp`), never by value.
+- **Never garden credentials.** WiFi passwords, MQTT broker usernames/passwords, HA long-lived access tokens, API keys, TLS certs/keys, or any other secret must never be written into the vault — not even redacted, partial, or "example" values. If a secret must be referenced, refer to it by name/location only (`WIFI_PASS in main.cpp`), never by value.
+- **Never garden internal network details.** Private/LAN IP addresses (the user's, the broker's, HA's, the ESP32's DHCP lease), MAC addresses, internal hostnames, mDNS names, subnet/gateway/DNS layout, port-forwarding rules, SSIDs, or any other detail that describes the user's private network. Refer to these by role, not value (`the MQTT broker`, `the HA host`, `<broker-ip>`), and keep concrete values in `src/main.cpp` / local config where the user manages them. This holds even when you learned the value from a live check (`pio device list`, `mqtt sub`, `ifconfig`) — observing it is fine, writing it into the vault is not.
 - Time-bound TODOs ("fix this by Friday"). Use the page itself to describe the *current state*; if a fix is pending, note it as a gotcha or open question.
 
 ## Filename conventions
@@ -169,4 +170,4 @@ For any of the above, **confirm with the user before running**, print the exact 
 - **Don't leave the vault unchanged after a non-trivial project conversation.** Either you confirmed existing info (no edit needed), or you learned something new (edit needed). Pure no-op turns should be rare.
 - **Don't create duplicate pages.** Check `README.md` and `ls vault/` for an existing page before creating a new one. If two pages cover the same concept, merge them.
 - **Don't reorganize aggressively.** The vault is the user's; small additive edits each turn, not big restructures.
-- **Don't commit secrets** when gardening — WiFi passwords, MQTT credentials, and HA tokens belong in `src/main.cpp` (which is already tracked and the user manages), never copied into vault pages.
+- **Don't garden secrets or internal network details** when enriching the vault — WiFi passwords, MQTT credentials, HA tokens, private LAN IPs, MAC addresses, and internal hostnames belong in `src/main.cpp` / local config (which the user manages), never copied into vault pages. See "What NOT to write in the vault" for the full rule. If you catch an earlier turn having written one of these into a vault page, scrub it (replace the value with a by-name reference) as part of the current turn.
